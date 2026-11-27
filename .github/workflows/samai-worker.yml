@@ -2,9 +2,8 @@ name: SamAI comment worker
 
 on:
   schedule:
-    # A once-hourly run stays within GitHub Free's included minutes when a run
-    # finishes within two minutes. Minute 17 avoids the top-of-hour queue.
-    - cron: "17 * * * *"
+    # Self-hosted runners are not billed per minute; stagger away from the hour.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
       operation:
@@ -27,7 +26,7 @@ jobs:
   worker:
     if: vars.SAMAI_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, Windows, X64]
-    timeout-minutes: 2
+    timeout-minutes: 10
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
