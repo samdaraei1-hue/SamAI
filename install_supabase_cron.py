@@ -21,9 +21,9 @@ DISPATCH_URL = (
 
 
 def main() -> None:
-    token = os.getenv("GITHUB_DISPATCH_TOKEN", "").strip()
+    token = os.getenv("SAMAI_GITHUB_DISPATCH_TOKEN", "").strip()
     if not token:
-        raise RuntimeError("Add the repository secret GITHUB_DISPATCH_TOKEN first")
+        raise RuntimeError("Add the repository secret SAMAI_GITHUB_DISPATCH_TOKEN first")
     if not config.database_url.startswith(("postgres://", "postgresql://")):
         raise RuntimeError("A Supabase PostgreSQL DATABASE_URL secret is required")
 

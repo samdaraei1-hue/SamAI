@@ -6,7 +6,7 @@ Supabase Cron is the clock. It asks GitHub Actions to run one cycle every 20 min
 
 The four existing Actions secrets remain required: `DATABASE_URL`, `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_USER_ID`, and `GEMINI_API_KEY`.
 
-Create a fine-grained GitHub personal access token with access only to the `SamAI` repository and **Actions: Read and write** permission. Add it as the repository Actions secret `GITHUB_DISPATCH_TOKEN`. Do not paste the token into chat or commit it.
+Create a fine-grained GitHub personal access token with access only to the `SamAI` repository and **Actions: Read and write** permission. Add it as the repository Actions secret `SAMAI_GITHUB_DISPATCH_TOKEN`. Do not paste the token into chat or commit it.
 
 Then run **Actions → SamAI comment worker → Run workflow → install-scheduler** once. That setup run stores the token in Supabase Vault, installs a Supabase Cron job for `*/20 * * * *`, and makes a read-only GitHub dispatch health check. The health check runs `stats`; it does not publish comments.
 

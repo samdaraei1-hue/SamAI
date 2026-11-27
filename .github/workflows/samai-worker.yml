@@ -48,7 +48,7 @@ jobs:
       - name: Install Supabase 20-minute scheduler
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.operation == 'install-scheduler'
         env:
-          GITHUB_DISPATCH_TOKEN: ${{ secrets.GITHUB_DISPATCH_TOKEN }}
+          SAMAI_GITHUB_DISPATCH_TOKEN: ${{ secrets.SAMAI_GITHUB_DISPATCH_TOKEN }}
         run: python install_supabase_cron.py
       - name: Run one worker cycle
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.operation != 'install-scheduler'
