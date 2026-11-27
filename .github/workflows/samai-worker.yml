@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   worker:
+    if: vars.SAMAI_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     env:
