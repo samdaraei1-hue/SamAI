@@ -1,0 +1,48 @@
+name: SamAI comment worker
+
+on:
+  schedule:
+    # A once-hourly run stays within GitHub Free's included minutes when a run
+    # finishes within two minutes. Minute 17 avoids the top-of-hour queue.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run once, or pause/resume scheduled processing
+        required: true
+        type: choice
+        options:
+          - run
+          - stop
+          - start
+
+permissions:
+  contents: read
+
+concurrency:
+  group: samai-comment-worker
+  cancel-in-progress: false
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+      INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SAMAI_DAEMON_MODE: "true"
+      DRY_RUN: "false"
+      AUTO_PUBLISH: "true"
+      WORKER_OPERATION: ${{ github.event.inputs.operation || 'run' }}
+      POLL_SECONDS: "3600"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run one worker cycle
+        run: python run_worker_once.py
