@@ -5,6 +5,7 @@ import time
 import requests
 
 from config import config
+from database import normalize_timestamp
 
 
 class InstagramError(RuntimeError):
@@ -65,7 +66,14 @@ class InstagramAPI:
 
     def comments(self, media_id):
         fields = "id,text,timestamp,from{id,username},username,parent_id,hidden,replies{id,text,timestamp,from{id,username},username}"
-        return self.pages(f"{media_id}/comments", {"fields": fields, "limit": 50})
+        # Instagram returns comments newest-first by default. Since its comments
+        # edge has no timestamp filter, stop paging once we cross the configured
+        # start date instead of fetching the post's full history.
+        for comment in self.pages(f"{media_id}/comments", {"fields": fields, "limit": 50}):
+            timestamp = normalize_timestamp(comment.get("timestamp"))
+            if not timestamp or timestamp < config.comment_cutoff_utc:
+                break
+            yield comment
 
     def replies(self, comment_id):
         return list(self.pages(f"{comment_id}/replies", {"fields": "id,text,timestamp,from{id,username},username", "limit": 50}))
