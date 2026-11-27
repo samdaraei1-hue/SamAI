@@ -2,8 +2,8 @@ name: SamAI comment worker
 
 on:
   schedule:
-    # Poll regularly, away from the top of the hour; GitHub schedules are best-effort.
-    - cron: "11,26,41,56 * * * *"
+    # One GitHub-hosted pass every 15 minutes, offset from the hour.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
     inputs:
       operation:
@@ -33,7 +33,8 @@ jobs:
       INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
       INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      SAMAI_DAEMON_MODE: "true"
+      # GitHub Actions is the only worker; Supabase remains the state store.
+      SAMAI_DAEMON_MODE: "false"
       DRY_RUN: "false"
       AUTO_PUBLISH: "true"
       WORKER_OPERATION: ${{ github.event.inputs.operation || 'run' }}

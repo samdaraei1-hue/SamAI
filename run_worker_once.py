@@ -36,12 +36,14 @@ def main():
         print(f"Publications today: {usage['publications']}")
         return
     if operation == "stop":
-        db.save_settings({"worker_enabled": False})
+        # Also stop any legacy Vercel daemon still connected to this database.
+        db.save_settings({"worker_enabled": False, "global_pause": True})
         print("Worker paused in Supabase settings.")
         return
     if operation == "start":
         db.save_settings({
-            "worker_enabled": True, "global_pause": False,
+            # GitHub Actions is the sole worker; leave the legacy daemon off.
+            "worker_enabled": False, "global_pause": False,
             "auto_publish": True, "dry_run": False,
             "max_replies_cycle": 100, "max_publications_day": 200,
             "max_tokens_day": 300000,
@@ -49,9 +51,6 @@ def main():
 
     settings = db.get_settings()
     config.update(settings)
-    if not settings.get("worker_enabled", True):
-        print("Worker is paused; no comments were processed.")
-        return
     if config.global_pause or config.emergency_stop:
         print("Global pause or emergency stop is enabled; no comments were processed.")
         return

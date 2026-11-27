@@ -11,12 +11,5 @@
       "source": "/(.*)",
       "destination": { "service": "api" }
     }
-  ],
-  "daemons": {
-    "samai-worker": {
-      "root": ".",
-      "entrypoint": "Dockerfile",
-      "instances": { "fra1": 1 }
-    }
-  }
+  ]
 }
