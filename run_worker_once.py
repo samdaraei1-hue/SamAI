@@ -1,6 +1,7 @@
 """One GitHub Actions pass: discover current comments, draft, and publish by policy."""
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 
 from config import config
 from database import db
@@ -16,6 +17,13 @@ def main():
         db.save_settings({"comment_cutoff_date": config.comment_cutoff_date})
 
     operation = os.getenv("WORKER_OPERATION", "run").strip().lower()
+    if operation == "stats":
+        since = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
+        with db.connect() as conn:
+            rows = conn.execute("SELECT status,COUNT(*) AS count FROM comments WHERE updated_at>=? GROUP BY status", (since,)).fetchall()
+        counts = {row["status"]: row["count"] for row in rows}
+        print("Recent comment statuses (last 60 minutes): " + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())))
+        return
     if operation == "stop":
         db.save_settings({"worker_enabled": False})
         print("Worker paused in Supabase settings.")
