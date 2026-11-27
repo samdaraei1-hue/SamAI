@@ -104,7 +104,12 @@ class Worker:
                         if comment.get("parent_id"):
                             self.db.update_comment(comment["id"], "skipped", decision="Nested comment; reply endpoint supports top-level comments only.", quality_flags=["nested_comment"])
                             continue
-                        creator_replies = self.api.creator_replies(comment["id"], existing=comment.get("replies"))
+                        try:
+                            creator_replies = self.api.creator_replies(comment["id"], existing=comment.get("replies"))
+                        except InstagramError as exc:
+                            status = "retry" if exc.transient else "error"
+                            self.db.update_comment(comment["id"], status, error=f"reply_check_failed_http_{exc.status or 'network'}")
+                            continue
                         if creator_replies:
                             reply = creator_replies[0]
                             self.db.update_comment(comment["id"], "replied_elsewhere", reply=reply.get("text") or "", published_reply_id=reply.get("id"), decision="An existing creator reply was found.")
@@ -212,7 +217,14 @@ class Worker:
         if usage["publications"] >= config.max_publications_day:
             self.db.update_comment(item["id"], "drafted", decision="Daily publication budget reached; held as draft.", quality_flags=flags)
             return
-        existing = self.api.creator_replies(item["id"])
+        try:
+            existing = self.api.creator_replies(item["id"])
+        except InstagramError as exc:
+            # A bad or inaccessible comment must not abort the rest of the queue.
+            # Never post unless the duplicate check succeeded.
+            status = "retry" if exc.transient else "error"
+            self.db.update_comment(item["id"], status, error=f"reply_check_failed_http_{exc.status or 'network'}")
+            return
         if existing:
             self.db.update_comment(item["id"], "replied_elsewhere", reply=existing[0].get("text") or reply, published_reply_id=existing[0].get("id"), decision="A creator reply already exists; duplicate publication prevented.", quality_flags=flags)
             return
