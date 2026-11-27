@@ -183,7 +183,6 @@ class Database:
         # Usernames and profile identifiers are intentionally not persisted.
         with self.connect() as db:
             db.execute("INSERT INTO comments(id,media_id,text,status,created_at,updated_at,source_timestamp) VALUES(?,?,?,'pending',?,?,?) ON CONFLICT(id) DO UPDATE SET source_timestamp=COALESCE(excluded.source_timestamp,comments.source_timestamp)", (str(item["id"]), str(media_id), item.get("text") or "", now(), now(), normalize_timestamp(item.get("timestamp"))))
-        return self.get_comment(str(item["id"]))
 
     def get_comment(self, comment_id):
         with self.connect() as db:

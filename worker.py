@@ -71,17 +71,24 @@ class Worker:
                     if config.emergency_stop or config.global_pause or self._background_stopping() or (config.daemon_mode and not settings.get("worker_enabled", True)):
                         break
                     self.db.save_media(media); found += 1
+                    print(f"Scanning media item {found}...", flush=True)
+                    comments_seen = 0
                     for comment in self.api.comments(str(media["id"])):
-                        settings = self._refresh_persistent_controls()
+                        comments_seen += 1
+                        # Refresh the remote stop/pause control periodically,
+                        # rather than opening a new database connection for
+                        # every comment during discovery.
+                        if comments_seen == 1 or comments_seen % 25 == 0:
+                            settings = self._refresh_persistent_controls()
                         if config.emergency_stop or config.global_pause or self._background_stopping() or (config.daemon_mode and not settings.get("worker_enabled", True)):
                             break
                         # Creator posts are never replied to; own comments are excluded.
                         if self.api.is_own(comment) or comment.get("hidden"):
                             continue
                         source_timestamp = normalize_timestamp(comment.get("timestamp"))
-                        existing = self.db.get_comment(str(comment["id"]))
                         if not source_timestamp or source_timestamp < config.comment_cutoff_utc:
                             # Do not backfill old or undated comments into the generation queue.
+                            existing = self.db.get_comment(str(comment["id"]))
                             if existing and existing["status"] in {"pending", "retry", "drafted", "processing"}:
                                 self.db.save_comment(comment, media["id"])
                                 self.db.update_comment(comment["id"], "skipped", decision="Comment is older than the configured start date or has no timestamp.", quality_flags=["before_cutoff_or_undated"])
