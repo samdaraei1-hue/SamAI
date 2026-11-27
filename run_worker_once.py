@@ -40,7 +40,12 @@ def main():
         print("Worker paused in Supabase settings.")
         return
     if operation == "start":
-        db.save_settings({"worker_enabled": True, "global_pause": False})
+        db.save_settings({
+            "worker_enabled": True, "global_pause": False,
+            "auto_publish": True, "dry_run": False,
+            "max_replies_cycle": 100, "max_publications_day": 200,
+            "max_tokens_day": 150000,
+        })
 
     settings = db.get_settings()
     config.update(settings)
@@ -51,7 +56,9 @@ def main():
         print("Global pause or emergency stop is enabled; no comments were processed.")
         return
 
-    result = worker.cycle()
+    # Start processes the queue already stored in Supabase immediately; the
+    # scheduled run will discover any newer comments on its next pass.
+    result = worker.cycle(discover=operation != "start")
     print(f"Cycle complete: discovered {result['found']} media items; processed {result['processed']} comments.")
 
 

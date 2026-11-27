@@ -108,7 +108,19 @@ class Worker:
                         if creator_replies:
                             reply = creator_replies[0]
                             self.db.update_comment(comment["id"], "replied_elsewhere", reply=reply.get("text") or "", published_reply_id=reply.get("id"), decision="An existing creator reply was found.")
-            pending = self.db.pending(config.max_replies_cycle)
+            cycle_remaining = config.max_replies_cycle
+            publication_slots = max(0, config.max_publications_day - self.db.usage_today()["publications"])
+            # Previously reviewed replies can be published directly without
+            # spending another model call; _publish still checks for duplicates.
+            drafts = self.db.drafted(min(cycle_remaining, publication_slots))
+            for item in drafts:
+                settings = self._refresh_persistent_controls()
+                if config.emergency_stop or config.global_pause or self._background_stopping() or (config.daemon_mode and not settings.get("worker_enabled", True)):
+                    break
+                self._publish(item, item["reply"], item.get("decision") or "Previously reviewed reply.", json.loads(item.get("quality_flags") or "[]"))
+            cycle_remaining = max(0, cycle_remaining - len(drafts))
+            publication_slots = max(0, config.max_publications_day - self.db.usage_today()["publications"])
+            pending = self.db.pending(min(cycle_remaining, publication_slots))
             pending = [x for x in pending if x["attempts"] <= config.max_retries]
             batch_total = 0
             for batch in self._chunks(pending):

@@ -207,6 +207,11 @@ class Database:
             from config import config
             return [dict(r) for r in db.execute("SELECT c.*,m.caption FROM comments c JOIN media m ON m.id=c.media_id WHERE c.status IN ('pending','retry') AND c.source_timestamp>=? ORDER BY c.source_timestamp,c.created_at LIMIT ?", (config.comment_cutoff_utc, limit))]
 
+    def drafted(self, limit=100):
+        with self.connect() as db:
+            from config import config
+            return [dict(r) for r in db.execute("SELECT c.*,m.caption FROM comments c JOIN media m ON m.id=c.media_id WHERE c.status='drafted' AND c.reply IS NOT NULL AND c.source_timestamp>=? ORDER BY c.source_timestamp,c.created_at LIMIT ?", (config.comment_cutoff_utc, limit))]
+
     def uncertain(self, limit=50):
         with self.connect() as db:
             return [dict(r) for r in db.execute("SELECT c.*,m.caption FROM comments c JOIN media m ON m.id=c.media_id WHERE c.status='uncertain' ORDER BY c.updated_at LIMIT ?", (limit,))]
