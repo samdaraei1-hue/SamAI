@@ -73,6 +73,7 @@ class Worker:
                     self.db.save_media(media); found += 1
                     print(f"Scanning media item {found}...", flush=True)
                     comments_seen = 0
+                    recent_comments = []
                     for comment in self.api.comments(str(media["id"])):
                         comments_seen += 1
                         # Refresh the remote stop/pause control periodically,
@@ -93,7 +94,9 @@ class Worker:
                                 self.db.save_comment(comment, media["id"])
                                 self.db.update_comment(comment["id"], "skipped", decision="Comment is older than the configured start date or has no timestamp.", quality_flags=["before_cutoff_or_undated"])
                             continue
-                        self.db.save_comment(comment, media["id"])
+                        recent_comments.append(comment)
+                    self.db.save_comments(recent_comments, media["id"])
+                    for comment in recent_comments:
                         if str(comment["id"]) in HISTORICAL_TEST_IDS:
                             self.db.update_comment(comment["id"], "skipped", decision="Historical regression comment; excluded from automatic publishing.", quality_flags=["historical_test_data"])
                             continue
