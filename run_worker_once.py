@@ -21,8 +21,11 @@ def main():
         since = (datetime.now(timezone.utc) - timedelta(minutes=60)).isoformat()
         with db.connect() as conn:
             rows = conn.execute("SELECT status,COUNT(*) AS count FROM comments WHERE updated_at>=? GROUP BY status", (since,)).fetchall()
+            failures = conn.execute("SELECT error,COUNT(*) AS count FROM comments WHERE updated_at>=? AND error IS NOT NULL GROUP BY error", (since,)).fetchall()
         counts = {row["status"]: row["count"] for row in rows}
         print("Recent comment statuses (last 60 minutes): " + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())))
+        if failures:
+            print("Recent failure reasons: " + ", ".join(f"{row['error']}={row['count']}" for row in failures))
         print("Publishing controls: " + ", ".join(f"{key}={settings.get(key, default)}" for key, default in (("auto_publish", config.auto_publish), ("dry_run", config.dry_run), ("max_publications_day", config.max_publications_day))))
         print(f"Publications today: {db.usage_today()['publications']}")
         return
