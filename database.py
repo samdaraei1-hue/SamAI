@@ -106,14 +106,16 @@ class Database:
                 options.setdefault("sslmode", "require")
                 for address in _resolve_ipv4_doh(options["host"]):
                     try:
-                        self.raw = psycopg.connect(**{**options, "hostaddr": address}, row_factory=dict_row, connect_timeout=15)
+                        self.raw = psycopg.connect(**{**options, "hostaddr": address}, row_factory=dict_row, connect_timeout=15, prepare_threshold=None)
                         break
                     except psycopg.OperationalError as exc:
                         last_error = exc
                 else:
                     raise last_error or RuntimeError("Could not connect to the database")
             else:
-                self.raw = psycopg.connect(url, row_factory=dict_row, connect_timeout=15)
+                # Supabase's transaction pooler may reuse server connections;
+                # disabling named prepared statements avoids name collisions.
+                self.raw = psycopg.connect(url, row_factory=dict_row, connect_timeout=15, prepare_threshold=None)
         @staticmethod
         def _sql(query): return query.replace("?", "%s")
         def execute(self, query, params=()): return self.raw.execute(self._sql(query), params)
