@@ -3,7 +3,7 @@ name: SamAI comment worker
 on:
   schedule:
     # Self-hosted runners are not billed per minute; stagger away from the hour.
-    - cron: "7,22,37,52 * * * *"
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       operation:
@@ -26,7 +26,7 @@ jobs:
   worker:
     if: vars.SAMAI_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
