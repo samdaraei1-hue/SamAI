@@ -23,6 +23,7 @@ def main():
             rows = conn.execute("SELECT status,COUNT(*) AS count FROM comments WHERE updated_at>=? GROUP BY status", (since,)).fetchall()
         counts = {row["status"]: row["count"] for row in rows}
         print("Recent comment statuses (last 60 minutes): " + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())))
+        print("Publishing controls: " + ", ".join(f"{key}={settings.get(key, default)}" for key, default in (("auto_publish", config.auto_publish), ("dry_run", config.dry_run), ("max_publications_day", config.max_publications_day))))
         return
     if operation == "stop":
         db.save_settings({"worker_enabled": False})
