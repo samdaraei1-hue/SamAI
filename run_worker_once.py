@@ -44,7 +44,7 @@ def main():
             "worker_enabled": True, "global_pause": False,
             "auto_publish": True, "dry_run": False,
             "max_replies_cycle": 100, "max_publications_day": 200,
-            "max_tokens_day": 150000,
+            "max_tokens_day": 300000,
         })
 
     settings = db.get_settings()
