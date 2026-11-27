@@ -1,29 +1,17 @@
-# GitHub Actions + Supabase worker
+# SamAI worker: Supabase clock, GitHub runner
 
-GitHub Actions runs one worker cycle every 15 minutes. Supabase stores the queue and settings between independent GitHub-hosted runs. No Vercel daemon is used for comment processing.
+Supabase Cron is the clock. It asks GitHub Actions to run one cycle every 20 minutes. GitHub runs the existing Python worker; Supabase stores the comment queue and settings. No Vercel worker or n8n service is involved.
 
-## GitHub repository settings
+## One-time setup
 
-Add these Actions secrets in **Settings → Secrets and variables → Actions → Secrets**:
+The four existing Actions secrets remain required: `DATABASE_URL`, `INSTAGRAM_ACCESS_TOKEN`, `INSTAGRAM_USER_ID`, and `GEMINI_API_KEY`.
 
-- `DATABASE_URL`: Supabase PostgreSQL Session Pooler URI with `sslmode=require`.
-- `INSTAGRAM_ACCESS_TOKEN`
-- `INSTAGRAM_USER_ID`
-- `GEMINI_API_KEY`
+Create a fine-grained GitHub personal access token with access only to the `SamAI` repository and **Actions: Read and write** permission. Add it as the repository Actions secret `GITHUB_DISPATCH_TOKEN`. Do not paste the token into chat or commit it.
 
-Add this Actions variable in **Settings → Secrets and variables → Actions → Variables**:
+Then run **Actions → SamAI comment worker → Run workflow → install-scheduler** once. That setup run stores the token in Supabase Vault, installs a Supabase Cron job for `*/20 * * * *`, and makes a read-only GitHub dispatch health check. The health check runs `stats`; it does not publish comments.
 
-- `SAMAI_ENABLED` = `true`
+After setup, Supabase sends the `scheduled` operation to GitHub every 20 minutes. These automatic runs are labeled `scheduled` in Actions. See the timer's execution history in the Supabase Dashboard under **Integrations → Cron**. Pause or resume processing with the workflow's `stop` and `start` operations; the Cron job can stay installed while processing is paused.
 
-The workflow file is `.github/workflows/samai-worker.yml`. Scheduled runs are best-effort and can be delayed by GitHub; check the Actions tab to confirm each `schedule` run.
+## How the scheduler is installed
 
-## Controls
-
-Use **Actions → SamAI comment worker → Run workflow** and select:
-
-- `run`: process a cycle now.
-- `stats`: print recent processing counts and usage.
-- `stop`: pause processing in Supabase.
-- `start`: resume processing and process the stored queue.
-
-Starting through this workflow leaves the legacy Vercel daemon disabled. Supabase remains the shared persistent store.
+`install_supabase_cron.py` creates or updates the named Cron job, so repeating the installation does not create duplicate jobs. The GitHub token is kept encrypted in Supabase Vault and is never printed in Actions logs.
