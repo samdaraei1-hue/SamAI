@@ -100,19 +100,18 @@ class Worker:
                         if str(comment["id"]) in HISTORICAL_TEST_IDS:
                             self.db.update_comment(comment["id"], "skipped", decision="Historical regression comment; excluded from automatic publishing.", quality_flags=["historical_test_data"])
                             continue
-                        # Only top-level comments can be responded to through this endpoint.
-                        if comment.get("parent_id"):
-                            self.db.update_comment(comment["id"], "skipped", decision="Nested comment; reply endpoint supports top-level comments only.", quality_flags=["nested_comment"])
-                            continue
-                        try:
-                            creator_replies = self.api.creator_replies(comment["id"], existing=comment.get("replies"))
-                        except InstagramError as exc:
-                            status = "retry" if exc.transient else "error"
-                            self.db.update_comment(comment["id"], status, error=f"reply_check_failed_http_{exc.status or 'network'}")
-                            continue
-                        if creator_replies:
-                            reply = creator_replies[0]
-                            self.db.update_comment(comment["id"], "replied_elsewhere", reply=reply.get("text") or "", published_reply_id=reply.get("id"), decision="An existing creator reply was found.")
+                        # Replies to a comment are separate work items. Instagram
+                        # publishes the response in their top-level thread.
+                        if not comment.get("parent_id"):
+                            try:
+                                creator_replies = self.api.creator_replies(comment["id"], existing=comment.get("replies"))
+                            except InstagramError as exc:
+                                status = "retry" if exc.transient else "error"
+                                self.db.update_comment(comment["id"], status, error=f"reply_check_failed_http_{exc.status or 'network'}")
+                                continue
+                            if creator_replies:
+                                reply = creator_replies[0]
+                                self.db.update_comment(comment["id"], "replied_elsewhere", reply=reply.get("text") or "", published_reply_id=reply.get("id"), decision="An existing creator reply was found.")
             cycle_remaining = config.max_replies_cycle
             publication_slots = max(0, config.max_publications_day - self.db.usage_today()["publications"])
             # Previously reviewed replies can be published directly without
@@ -177,7 +176,7 @@ class Worker:
         """Cap both comment count and estimated prompt size before tokenization."""
         chunks, current, chars = [], [], 0
         for item in items:
-            size = min(1600, len(item.get("text") or "")) + min(1200, len(item.get("caption") or "")) + 160
+            size = min(1600, len(item.get("text") or "")) + min(1200, len(item.get("caption") or "")) + min(4000, len(item.get("thread_context") or "")) + 160
             if current and (len(current) >= config.batch_size or chars + size > config.max_batch_chars):
                 chunks.append(current); current, chars = [], 0
             current.append(item); chars += size
@@ -199,8 +198,12 @@ class Worker:
         for item in self.db.uncertain():
             try:
                 # The GET is the required idempotency check after a lost POST result.
-                existing = self.api.creator_replies(item["id"])
-                if existing:
+                target_id = str(item.get("parent_comment_id") or item["id"])
+                existing = self.api.creator_replies(target_id)
+                matched = next((reply for reply in existing if (reply.get("text") or "").strip() == (item.get("reply") or "").strip()), None)
+                if matched:
+                    self.db.update_comment(item["id"], "published", reply=matched.get("text") or item.get("reply") or "", published_reply_id=matched.get("id"), decision="The reply was found while recovering an uncertain publication.")
+                elif existing and not item.get("parent_comment_id"):
                     self.db.update_comment(item["id"], "replied_elsewhere", reply=existing[0].get("text") or "", published_reply_id=existing[0].get("id"), decision="A creator reply was found while recovering uncertain publication.")
                 elif item.get("reply"):
                     self.db.update_comment(item["id"], "drafted", decision="Instagram confirmed no creator reply; publication can safely be attempted again.")
@@ -218,25 +221,30 @@ class Worker:
             self.db.update_comment(item["id"], "drafted", decision="Daily publication budget reached; held as draft.", quality_flags=flags)
             return
         try:
-            existing = self.api.creator_replies(item["id"])
+            target_id = str(item.get("parent_comment_id") or item["id"])
+            existing = self.api.creator_replies(target_id)
         except InstagramError as exc:
             # A bad or inaccessible comment must not abort the rest of the queue.
             # Never post unless the duplicate check succeeded.
             status = "retry" if exc.transient else "error"
             self.db.update_comment(item["id"], status, error=f"reply_check_failed_http_{exc.status or 'network'}")
             return
-        if existing:
+        matching_reply = next((entry for entry in existing if (entry.get("text") or "").strip() == reply.strip()), None)
+        if matching_reply:
+            self.db.update_comment(item["id"], "published", reply=matching_reply.get("text") or reply, published_reply_id=matching_reply.get("id"), decision="The same creator reply already exists; duplicate publication prevented.", quality_flags=flags)
+            return
+        if existing and not item.get("parent_comment_id"):
             self.db.update_comment(item["id"], "replied_elsewhere", reply=existing[0].get("text") or reply, published_reply_id=existing[0].get("id"), decision="A creator reply already exists; duplicate publication prevented.", quality_flags=flags)
             return
         # Persist intent before the irreversible call; restart recovery checks Instagram first.
         self.db.update_comment(item["id"], "publishing", reply=reply, decision=decision, quality_flags=flags)
         try:
-            response = self.api.publish_reply(item["id"], reply)
+            response = self.api.publish_reply(target_id, reply)
             self.db.update_comment(item["id"], "published", published_reply_id=str(response.get("id", "")), reply=reply, decision=decision, quality_flags=flags, error=None)
         except InstagramError as exc:
             if exc.status is None or exc.transient:
                 try:
-                    if self.api.already_replied(item["id"], reply):
+                    if self.api.already_replied(target_id, reply):
                         self.db.update_comment(item["id"], "published", published_reply_id="verified_after_uncertain_result", reply=reply, decision=decision, quality_flags=flags)
                         return
                 except InstagramError:

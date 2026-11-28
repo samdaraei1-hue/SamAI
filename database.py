@@ -159,7 +159,7 @@ class Database:
                 db.execute("PRAGMA foreign_keys=ON")
             schema = """
             CREATE TABLE IF NOT EXISTS media(id TEXT PRIMARY KEY, caption TEXT NOT NULL DEFAULT '', media_type TEXT, timestamp TEXT, discovered_at TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS comments(id TEXT PRIMARY KEY, media_id TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', reply TEXT, published_reply_id TEXT, decision TEXT, quality_flags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, error TEXT, attempts INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(media_id) REFERENCES media(id));
+            CREATE TABLE IF NOT EXISTS comments(id TEXT PRIMARY KEY, media_id TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending', reply TEXT, published_reply_id TEXT, decision TEXT, quality_flags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, error TEXT, attempts INTEGER NOT NULL DEFAULT 0, parent_comment_id TEXT, thread_context TEXT NOT NULL DEFAULT '', FOREIGN KEY(media_id) REFERENCES media(id));
             CREATE INDEX IF NOT EXISTS comments_status_idx ON comments(status, updated_at);
             CREATE TABLE IF NOT EXISTS usage(id {identity}, stage TEXT NOT NULL, requests INTEGER NOT NULL DEFAULT 1, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, error TEXT);
             CREATE TABLE IF NOT EXISTS corrections(id {identity}, comment_id TEXT NOT NULL, correction TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -168,10 +168,16 @@ class Database:
             db.executescript(schema)
             if self.is_postgres:
                 db.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS source_timestamp TEXT")
+                db.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_comment_id TEXT")
+                db.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS thread_context TEXT NOT NULL DEFAULT ''")
             else:
                 columns = {r["name"] for r in db.execute("PRAGMA table_info(comments)")}
                 if "source_timestamp" not in columns:
                     db.execute("ALTER TABLE comments ADD COLUMN source_timestamp TEXT")
+                if "parent_comment_id" not in columns:
+                    db.execute("ALTER TABLE comments ADD COLUMN parent_comment_id TEXT")
+                if "thread_context" not in columns:
+                    db.execute("ALTER TABLE comments ADD COLUMN thread_context TEXT NOT NULL DEFAULT ''")
             # Recover interrupted work conservatively: drafts can be regenerated; an
             # in-flight publish must be checked on Instagram before any retry.
             db.execute("UPDATE comments SET status='retry',error='recovered_after_restart' WHERE status='processing'")
@@ -193,8 +199,8 @@ class Database:
         created = now()
         with self.connect() as db:
             db.executemany(
-                "INSERT INTO comments(id,media_id,text,status,created_at,updated_at,source_timestamp) VALUES(?,?,?,'pending',?,?,?) ON CONFLICT(id) DO UPDATE SET source_timestamp=COALESCE(excluded.source_timestamp,comments.source_timestamp)",
-                [(str(item["id"]), str(media_id), item.get("text") or "", created, created, normalize_timestamp(item.get("timestamp"))) for item in items],
+                "INSERT INTO comments(id,media_id,text,status,created_at,updated_at,source_timestamp,parent_comment_id,thread_context) VALUES(?,?,?,'pending',?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source_timestamp=COALESCE(excluded.source_timestamp,comments.source_timestamp),parent_comment_id=COALESCE(excluded.parent_comment_id,comments.parent_comment_id),thread_context=CASE WHEN excluded.thread_context<>'' THEN excluded.thread_context ELSE comments.thread_context END,status=CASE WHEN comments.status='skipped' AND comments.quality_flags LIKE '%nested_comment%' AND excluded.parent_comment_id IS NOT NULL THEN 'pending' ELSE comments.status END,decision=CASE WHEN comments.status='skipped' AND comments.quality_flags LIKE '%nested_comment%' AND excluded.parent_comment_id IS NOT NULL THEN NULL ELSE comments.decision END,quality_flags=CASE WHEN comments.status='skipped' AND comments.quality_flags LIKE '%nested_comment%' AND excluded.parent_comment_id IS NOT NULL THEN '[]' ELSE comments.quality_flags END,reply=CASE WHEN comments.status='skipped' AND comments.quality_flags LIKE '%nested_comment%' AND excluded.parent_comment_id IS NOT NULL THEN NULL ELSE comments.reply END,error=CASE WHEN comments.status='skipped' AND comments.quality_flags LIKE '%nested_comment%' AND excluded.parent_comment_id IS NOT NULL THEN NULL ELSE comments.error END,updated_at=CASE WHEN comments.status='skipped' AND comments.quality_flags LIKE '%nested_comment%' AND excluded.parent_comment_id IS NOT NULL THEN excluded.updated_at ELSE comments.updated_at END",
+                [(str(item["id"]), str(media_id), item.get("text") or "", created, created, normalize_timestamp(item.get("timestamp")), str(item.get("parent_id")) if item.get("parent_id") else None, (item.get("thread_context") or "")[:4000]) for item in items],
             )
 
     def get_comment(self, comment_id):

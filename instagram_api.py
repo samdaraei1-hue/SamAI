@@ -65,18 +65,65 @@ class InstagramAPI:
             yield item
 
     def comments(self, media_id):
-        fields = "id,text,timestamp,from{id,username},username,parent_id,hidden,replies{id,text,timestamp,from{id,username},username}"
+        fields = "id,text,timestamp,from{id,username},username,parent_id,hidden,replies{id,text,timestamp,from{id,username},username,parent_id,hidden}"
         # Instagram returns comments newest-first by default. Since its comments
         # edge has no timestamp filter, stop paging once we cross the configured
         # start date instead of fetching the post's full history.
+        comments_seen = 0
+        old_comment_boundary = None
         for comment in self.pages(f"{media_id}/comments", {"fields": fields, "limit": 50}):
+            comments_seen += 1
             timestamp = normalize_timestamp(comment.get("timestamp"))
-            if not timestamp or timestamp < config.comment_cutoff_utc:
+            is_recent = bool(timestamp and timestamp >= config.comment_cutoff_utc)
+            if is_recent:
+                yield comment
+            elif old_comment_boundary is None:
+                # Check a bounded page of older parent threads too: someone may
+                # have replied to an old comment today.
+                old_comment_boundary = comments_seen
+            # The media comments edge returns top-level comments. Their replies
+            # are expanded separately and become individual work items.
+            parent_id = str(comment["id"])
+            parent_text = (comment.get("text") or "").strip()
+            expanded_replies = comment.get("replies")
+            replies = self.replies(parent_id, existing=expanded_replies) if isinstance(expanded_replies, dict) else []
+            chronological = sorted(
+                replies,
+                key=lambda item: normalize_timestamp(item.get("timestamp")) or "",
+            )
+            for reply in chronological:
+                reply_timestamp = normalize_timestamp(reply.get("timestamp"))
+                if not reply_timestamp or reply_timestamp < config.comment_cutoff_utc:
+                    continue
+                if str(reply.get("id", "")) == parent_id:
+                    continue
+                reply["parent_id"] = parent_id
+                history = [
+                    item for item in chronological
+                    if str(item.get("id", "")) != str(reply.get("id", ""))
+                    and normalize_timestamp(item.get("timestamp"))
+                    and normalize_timestamp(item.get("timestamp")) <= reply_timestamp
+                ]
+                history = history[-6:]
+                thread_parts = [f"کامنت اصلی: {parent_text}"]
+                if history:
+                    thread_parts.append("پاسخ‌های قبلی در همین گفتگو:\n" + "\n".join(
+                        f"{'سام' if self.is_own(item) else 'مخاطب'}: {(item.get('text') or '').strip()}"
+                        for item in history
+                    ))
+                reply["thread_context"] = "\n".join(thread_parts)[:4000]
+                yield reply
+            if old_comment_boundary is not None and comments_seen >= old_comment_boundary + 49:
                 break
-            yield comment
 
-    def replies(self, comment_id):
-        return list(self.pages(f"{comment_id}/replies", {"fields": "id,text,timestamp,from{id,username},username", "limit": 50}))
+    def replies(self, comment_id, existing=None):
+        if isinstance(existing, dict) and isinstance(existing.get("data"), list):
+            found = list(existing["data"])
+            next_url = existing.get("paging", {}).get("next")
+            if next_url:
+                found.extend(self.pages(next_url))
+            return found
+        return list(self.pages(f"{comment_id}/replies", {"fields": "id,text,timestamp,from{id,username},username,parent_id,hidden", "limit": 50}))
 
     @staticmethod
     def is_own(item):
